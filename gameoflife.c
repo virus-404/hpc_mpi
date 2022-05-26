@@ -5,28 +5,45 @@
 
 #define COLS 10
 #define ROWS 10
+#define ITER 154
+#define DEBUG 0
 #define BOARD_FILE "./resources/10x10/LifeGameInit_10x10_iter0.txt"
 
-struct task {
+struct task
+{
     int stop;
     int row;
     int board[COLS * 3];
 };
 
 void load_board(int[ROWS][COLS]);
-void assembly_task(struct task*, int, int[ROWS][COLS]);
+void assembly_task(struct task *, int, int[ROWS][COLS]);
 int calculate(int[COLS * 3], int);
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv)
+{
     MPI_Init(&argc, &argv);
 
     int nproc, iproc;
+    double start, elapsed;
     MPI_Comm_size(MPI_COMM_WORLD, &nproc);
     MPI_Comm_rank(MPI_COMM_WORLD, &iproc);
 
-    enum rank_roles { MASTER, WORKER };
-    enum boolean { FALSE, TRUE };
-    enum state { DEAD, ALIVE };
+    enum rank_roles
+    {
+        MASTER,
+        WORKER
+    };
+    enum boolean
+    {
+        FALSE,
+        TRUE
+    };
+    enum state
+    {
+        DEAD,
+        ALIVE
+    };
 
     // Create the datatype  SOURCE:
     // https://www.rookiehpc.com/mpi/docs/mpi_type_create_struct.php
@@ -51,91 +68,143 @@ int main(int argc, char** argv) {
     MPI_Datatype types[3] = {MPI_INT, MPI_INT, MPI_INT};
     MPI_Type_create_struct(3, lengths, displacements, types, &task_type);
     MPI_Type_commit(&task_type);
-
-    if (iproc == MASTER) {
-        int i, j, k, init_row;
+    
+    if (iproc == MASTER)
+    {
+        int i, j, k, init_row, iter;
         int board[ROWS][COLS];
         MPI_Request sent[COLS];
-        struct task work[COLS];
+        struct task work[ROWS];
         struct task done;
+        char path[255];
+        FILE *fp;
 
         load_board(board);
-        k = WORKER;
-
-        for (i = 0; i < ROWS; i++) {
-            assembly_task(&work[i], i, board);
-
-            
-
-            work[i].stop = FALSE;
-            MPI_Isend(&work[i], 1, task_type, k, 0, MPI_COMM_WORLD, &sent[i]);
-            k++;
-            if (k == nproc) k = 1;
-        }
-
-        k = WORKER;
-        for (i = 0; i < ROWS; i++) {
-            MPI_Recv(&done, 1, task_type, k, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            for (j = 0; j < COLS; j++) {
-                board[done.row][j] = done.board[j + COLS];
-            }
-            k++; 
-            if (k == nproc) k = 1;
-        }
         
-        for (i = 0; i < ROWS; i++)
-        {
-            for (j = 0; j < COLS; j++)
+        
+        if(DEBUG){
+            fp = fopen("results/10x10/LifeGameInit_10x10_iter0.txt", "w+");
+
+            for (i = 0; i < ROWS; i++)
             {
-                printf("|%d",board[i][j]);
+                for (j = 0; j < COLS; j++)
+                {
+                    fprintf(fp," %d", board[i][j]);
+                }
+                fprintf(fp,"\n");
             }
-            printf("|\n");
-
-        }
+            fclose(fp);
+        }     
         
+        start = MPI_Wtime();
+        for (iter = 1; iter < ITER; iter++)
+        {
+            k = WORKER;
+            for (i = 0; i < ROWS; i++)
+            {
+                assembly_task(&work[i], i, board);
+                work[i].stop = FALSE;
+                MPI_Isend(&work[i], 1, task_type, k, 0, MPI_COMM_WORLD, &sent[i]);
+                k++;
+                if (k == nproc)
+                    k = WORKER;
+            }
 
-        // getResutlTask
-        // Broadcasting the end --> MPI_Bcast was not used since it locks the
-        // program (sometimes)
-        for (i = WORKER; i < nproc; i++) {
+            k = WORKER;
+            for (i = 0; i < ROWS; i++)
+            {
+                MPI_Recv(&done, 1, task_type, k, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                for (j = 0; j < COLS; j++)
+                {
+                    board[done.row][j] = done.board[j + COLS];
+                }
+                k++;
+                if (k == nproc)
+                    k = WORKER;
+            }
+            
+            if(DEBUG){
+                sprintf(path, "results/10x10/LifeGame_10x10_iter%d.txt", iter);
+                fp = fopen(path, "w+");
+                for (i = 0; i < ROWS; i++)
+                {
+                    for (j = 0; j < COLS; j++)
+                    {
+                        fprintf(fp, " %d", board[i][j]);
+                    }
+                    fprintf(fp, "\n");
+                }
+                fclose(fp);
+            }
+            
+        }
+        elapsed = MPI_Wtime() - start;
+        printf("I took %f\n" ,elapsed);
+
+        if(DEBUG){
+            sprintf(path, "results/10x10/LifeGameEnd_10x10_iter%d.txt", ITER - 1);
+            fp = fopen(path, "w+");
+            for (i = 0; i < ROWS; i++)
+            {
+                for (j = 0; j < COLS; j++)
+                {
+                    fprintf(fp, " %d", board[i][j]);
+                }
+                fprintf(fp, "\n");
+            }
+            fclose(fp);
+        }
+            
+        for (i = WORKER; i < nproc; i++)
+        {
             work[i].stop = TRUE;
             MPI_Send(&work[i], 1, task_type, i, 0, MPI_COMM_WORLD);
         }
-
-        printf("Hello World \n");
-
-    } else {
+        //
+    }
+    else
+    {
         struct task received, sent;
         MPI_Request outbound;
         int i, j, neighbors;
-
-        while (TRUE) {
+        int iter = 0;
+        while (TRUE)
+        {
             MPI_Recv(&received, 1, task_type, MASTER, 0, MPI_COMM_WORLD,
                      MPI_STATUS_IGNORE);
-            if (received.stop == TRUE)
-                break;  // Always on n_iteration + 1 is TRUE
 
-            for (i = 0; i < COLS; i++) {
+            iter++;
+            if (received.stop == TRUE)
+                break; // Always on n_iteration + 1 is TRUE
+
+            for (i = 0; i < COLS; i++)
+            {
                 neighbors = 0;
-                neighbors += received.board[i];                     // N
-                neighbors += received.board[i + COLS * 2];         // S
-                if (i == COLS - 1) {
-                    neighbors += received.board[0];                // NE
-                    neighbors += received.board[COLS];             // E
-                    neighbors += received.board[COLS*2];           // SE
-                } else {
+                neighbors += received.board[i];            // N
+                neighbors += received.board[i + COLS * 2]; // S
+                if (i == COLS - 1)
+                {
+                    neighbors += received.board[0];        // NE
+                    neighbors += received.board[COLS];     // E
+                    neighbors += received.board[COLS * 2]; // SE
+                }
+                else
+                {
                     neighbors += received.board[i + 1];            // NE
                     neighbors += received.board[i + COLS + 1];     // E
                     neighbors += received.board[i + COLS * 2 + 1]; // SE
-                } 
-                if (i == 0){
-                    neighbors += received.board[COLS * 3 - 1];     //SW
-                    neighbors += received.board[COLS * 2 - 1];     //W
-                    neighbors += received.board[COLS - 1];         //NW
-                } else {
-                    neighbors += received.board[i + COLS * 2 - 1]; //SW
-                    neighbors += received.board[i + COLS - 1];     //W
-                    neighbors += received.board[i - 1];            //NW
+                }
+                if (i == 0)
+                {
+                    neighbors += received.board[COLS * 3 - 1]; // SW
+                    neighbors += received.board[COLS * 2 - 1]; // W
+                    neighbors += received.board[COLS - 1];     // NW
+                }
+                else
+                {
+                    neighbors += received.board[i + COLS * 2 - 1]; // SW
+                    neighbors += received.board[i + COLS - 1];     // W
+                    neighbors += received.board[i - 1];            // NW
                 }
                 /*
                 • Cell without life: if the cell has less than two living neighbors.
@@ -154,27 +223,29 @@ int main(int argc, char** argv) {
             }
             sent.row = received.row;
             sent.stop = received.stop;
-            MPI_Send(&sent, 1, task_type, MASTER, 0, MPI_COMM_WORLD);
+            MPI_Send(&sent, 1, task_type, MASTER, 0, MPI_COMM_WORLD);     
         }
     }
-
     MPI_Finalize();
     return 0;
 }
 
-void load_board(int board[ROWS][COLS]) {
+void load_board(int board[ROWS][COLS])
+{
     int i, j;
 
-    FILE* fp;
-    char* token;
-    const char* mode = "r";
-    char buffer[COLS * 2 + 2];  // + 2 -->"\o" +"\n"
+    FILE *fp;
+    char *token;
+    const char *mode = "r";
+    char buffer[COLS * 2 + 2]; // + 2 -->"\o" +"\n"
 
     i = 0;
     fp = fopen(BOARD_FILE, mode);
-    while (fgets(buffer, sizeof(buffer), fp)) {
+    while (fgets(buffer, sizeof(buffer), fp))
+    {
         token = strtok(buffer, " ");
-        while (token != NULL) {
+        while (token != NULL)
+        {
             board[i][j] = atoi(token);
             token = strtok(NULL, " ");
             j++;
@@ -184,15 +255,18 @@ void load_board(int board[ROWS][COLS]) {
     }
     fclose(fp);
 }
-
-void assembly_task(struct task* assembly, int row, int board[ROWS][COLS]) {
+//[0..ROWS-1]  
+void assembly_task(struct task *assembly, int row, int board[ROWS][COLS])
+{
     int i, j, k;
 
-    i = row == 0? ROWS - 1 : row - 1;
+    i = row == 0 ? ROWS - 1 : row - 1;
     assembly->row = row;
-    
-    for (k = 0; k < 3; k++) {
-        for (j = 0; j < COLS; j++) {
+
+    for (k = 0; k < 3; k++)
+    {
+        for (j = 0; j < COLS; j++)
+        {
             assembly->board[j + k * COLS] = board[i][j];
         }
         i = (i + 1) % ROWS;

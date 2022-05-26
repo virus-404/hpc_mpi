@@ -1,5 +1,6 @@
 .vscode
 resources/**
 lifegame.c
-resources.zip
+resources.*
 tmp
+results
