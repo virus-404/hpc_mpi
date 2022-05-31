@@ -3,12 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ROWS 10
 #define COLS 10
-#define ITER  154
-#define DEBUG 1
-#define BOARD_FILE "./resources/10x10/LifeGameInit_10x10_iter0.txt" 
-//"/share/apps/files/lifegame/Examples/5000x5000/LifeGameInit_5000x5000_iter0.txt"
+#define ROWS 10
+#define ITER 154
+#define DEBUG 0
+#define BOARD_FILE "./resources/10x10/LifeGameInit_10x10_iter0.txt"
 
 struct task
 {
@@ -17,12 +16,14 @@ struct task
     int board[COLS * 3];
 };
 
-void load_board(int*);
-void assembly_task(struct task *, int, int*);
+void load_board(int[ROWS][COLS]);
+void assembly_task(struct task *, int, int[ROWS][COLS]);
+int calculate(int[COLS * 3], int);
 
 int main(int argc, char **argv)
 {
     MPI_Init(&argc, &argv);
+
     int nproc, iproc;
     double start, elapsed;
     MPI_Comm_size(MPI_COMM_WORLD, &nproc);
@@ -71,14 +72,15 @@ int main(int argc, char **argv)
     if (iproc == MASTER)
     {
         int i, j, k, init_row, iter;
-        int *board = malloc((ROWS * COLS) * sizeof(int));
-        MPI_Request *sent = malloc(ROWS* sizeof(MPI_Request));
-        struct task *work = malloc(sizeof(struct task));
-        struct task *done = malloc(sizeof(struct task));
+        int board[ROWS][COLS];
+        MPI_Request sent[COLS];
+        struct task work[ROWS];
+        struct task done;
         char path[255];
         FILE *fp;
-	
+
         load_board(board);
+        
         
         if(DEBUG){
             fp = fopen("results/10x10/LifeGameInit_10x10_iter0.txt", "w+");
@@ -87,7 +89,7 @@ int main(int argc, char **argv)
             {
                 for (j = 0; j < COLS; j++)
                 {
-                    fprintf(fp," %d", board[i*COLS + j]);
+                    fprintf(fp," %d", board[i][j]);
                 }
                 fprintf(fp,"\n");
             }
@@ -100,9 +102,9 @@ int main(int argc, char **argv)
             k = WORKER;
             for (i = 0; i < ROWS; i++)
             {
-                assembly_task(work, i, board);
-                work->stop = FALSE;
-                MPI_Isend(work, 1, task_type, k, 0, MPI_COMM_WORLD, &sent[i]);
+                assembly_task(&work[i], i, board);
+                work[i].stop = FALSE;
+                MPI_Isend(&work[i], 1, task_type, k, 0, MPI_COMM_WORLD, &sent[i]);
                 k++;
                 if (k == nproc)
                     k = WORKER;
@@ -111,10 +113,10 @@ int main(int argc, char **argv)
             k = WORKER;
             for (i = 0; i < ROWS; i++)
             {
-                MPI_Recv(done, 1, task_type, k, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(&done, 1, task_type, k, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 for (j = 0; j < COLS; j++)
                 {
-                    *(board + done->row * COLS + j) = done->board[j + COLS];
+                    board[done.row][j] = done.board[j + COLS];
                 }
                 k++;
                 if (k == nproc)
@@ -128,7 +130,7 @@ int main(int argc, char **argv)
                 {
                     for (j = 0; j < COLS; j++)
                     {
-                        fprintf(fp, " %d", *(board + i* COLS + j));
+                        fprintf(fp, " %d", board[i][j]);
                     }
                     fprintf(fp, "\n");
                 }
@@ -137,16 +139,16 @@ int main(int argc, char **argv)
             
         }
         elapsed = MPI_Wtime() - start;
-        printf("With board %dx%d and %d iterations, I took %f seconds with %d ranks\n", ROWS, COLS, ITER, elapsed, nproc);
-        
-	if(DEBUG){
+        printf("I took %f\n" ,elapsed);
+
+        if(DEBUG){
             sprintf(path, "results/10x10/LifeGameEnd_10x10_iter%d.txt", ITER - 1);
             fp = fopen(path, "w+");
             for (i = 0; i < ROWS; i++)
             {
                 for (j = 0; j < COLS; j++)
                 {
-                    fprintf(fp, " %d", *(board + i * COLS + j));
+                    fprintf(fp, " %d", board[i][j]);
                 }
                 fprintf(fp, "\n");
             }
@@ -228,7 +230,7 @@ int main(int argc, char **argv)
     return 0;
 }
 
-void load_board(int *board)
+void load_board(int board[ROWS][COLS])
 {
     int i, j;
 
@@ -244,18 +246,17 @@ void load_board(int *board)
         token = strtok(buffer, " ");
         while (token != NULL)
         {
-            *(board + i * COLS + j) = atoi(token);
+            board[i][j] = atoi(token);
             token = strtok(NULL, " ");
             j++;
         }
         i++;
         j = 0;
     }
-    printf("Hello, world!\n");
     fclose(fp);
 }
 //[0..ROWS-1]  
-void assembly_task(struct task *assembly, int row, int *board)
+void assembly_task(struct task *assembly, int row, int board[ROWS][COLS])
 {
     int i, j, k;
 
@@ -266,7 +267,7 @@ void assembly_task(struct task *assembly, int row, int *board)
     {
         for (j = 0; j < COLS; j++)
         {
-            assembly->board[j + k * COLS] = *(board + i*COLS + j);
+            assembly->board[j + k * COLS] = board[i][j];
         }
         i = (i + 1) % ROWS;
     }
