@@ -3,12 +3,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ROWS 10
 #define COLS 10
-#define ITER  154
-#define DEBUG 1
+#define ROWS 10
+#define ITER 154
+#define DEBUG 0
 #define BOARD_FILE "./resources/10x10/LifeGameInit_10x10_iter0.txt" 
-//"/share/apps/files/lifegame/Examples/5000x5000/LifeGameInit_5000x5000_iter0.txt"
+// "/share/apps/files/lifegame/Examples/5000x5000/LifeGameInit_5000x5000_iter0.txt"
+//"./resources/10x10/LifeGameInit_10x10_iter0.txt"
 
 struct task
 {
@@ -77,7 +78,7 @@ int main(int argc, char **argv)
         struct task *done = malloc(sizeof(struct task));
         char path[255];
         FILE *fp;
-	
+        
         load_board(board);
         
         if(DEBUG){
@@ -155,54 +156,55 @@ int main(int argc, char **argv)
             
         for (i = WORKER; i < nproc; i++)
         {
-            work[i].stop = TRUE;
-            MPI_Send(&work[i], 1, task_type, i, 0, MPI_COMM_WORLD);
+            work->stop = TRUE;
+            MPI_Send(work, 1, task_type, i, 0, MPI_COMM_WORLD);
         }
         //
     }
     else
     {
-        struct task received, sent;
+        struct task *received= malloc(sizeof(struct task));
+        struct task *sent = malloc(sizeof(struct task));
         MPI_Request outbound;
         int i, j, neighbors;
         int iter = 0;
         while (TRUE)
         {
-            MPI_Recv(&received, 1, task_type, MASTER, 0, MPI_COMM_WORLD,
+            MPI_Recv(received, 1, task_type, MASTER, 0, MPI_COMM_WORLD,
                      MPI_STATUS_IGNORE);
-
+            
             iter++;
-            if (received.stop == TRUE)
+            if (received->stop == TRUE)
                 break; // Always on n_iteration + 1 is TRUE
 
             for (i = 0; i < COLS; i++)
             {
                 neighbors = 0;
-                neighbors += received.board[i];            // N
-                neighbors += received.board[i + COLS * 2]; // S
+                neighbors += *(received->board + i);            // N
+                neighbors += *(received->board + i + COLS * 2); // S
                 if (i == COLS - 1)
                 {
-                    neighbors += received.board[0];        // NE
-                    neighbors += received.board[COLS];     // E
-                    neighbors += received.board[COLS * 2]; // SE
+                    neighbors += *(received->board + 0);        // NE
+                    neighbors += *(received->board + COLS);     // E
+                    neighbors += *(received->board + COLS * 2); // SE
                 }
                 else
                 {
-                    neighbors += received.board[i + 1];            // NE
-                    neighbors += received.board[i + COLS + 1];     // E
-                    neighbors += received.board[i + COLS * 2 + 1]; // SE
+                    neighbors += *(received->board + i + 1);            // NE
+                    neighbors += *(received->board + i + COLS + 1);     // E
+                    neighbors += *(received->board + i + COLS * 2 + 1); // SE
                 }
                 if (i == 0)
                 {
-                    neighbors += received.board[COLS * 3 - 1]; // SW
-                    neighbors += received.board[COLS * 2 - 1]; // W
-                    neighbors += received.board[COLS - 1];     // NW
+                    neighbors += *(received->board + COLS * 3 - 1); // SW
+                    neighbors += *(received->board + COLS * 2 - 1); // W
+                    neighbors += *(received->board + COLS - 1);     // NW
                 }
                 else
                 {
-                    neighbors += received.board[i + COLS * 2 - 1]; // SW
-                    neighbors += received.board[i + COLS - 1];     // W
-                    neighbors += received.board[i - 1];            // NW
+                    neighbors += *(received->board + i + COLS * 2 - 1); // SW
+                    neighbors += *(received->board + i + COLS - 1);     // W
+                    neighbors += *(received->board + i - 1);            // NW
                 }
                 /*
                 • Cell without life: if the cell has less than two living neighbors.
@@ -211,17 +213,17 @@ int main(int argc, char **argv)
                 • Death: if a living cell has more than 3 living neighbors (overpopulation).
                 */
                 if (neighbors < 2)
-                    sent.board[i + COLS] = DEAD;
-                else if (neighbors == 2 && received.board[i + COLS] == ALIVE)
-                    sent.board[i + COLS] = ALIVE;
+                    *(sent->board+ i + COLS) = DEAD;
+                else if (neighbors == 2 && *(received->board + i + COLS) == ALIVE)
+                    *(sent->board+ i + COLS) = ALIVE;
                 else if (neighbors == 3)
-                    sent.board[i + COLS] = ALIVE;
+                    *(sent->board+ i + COLS) = ALIVE;
                 else
-                    sent.board[i + COLS] = DEAD;
+                    *(sent->board+ i + COLS) = DEAD;
             }
-            sent.row = received.row;
-            sent.stop = received.stop;
-            MPI_Send(&sent, 1, task_type, MASTER, 0, MPI_COMM_WORLD);     
+            sent->row = received->row;
+            sent->stop = received->stop;
+            MPI_Send(sent, 1, task_type, MASTER, 0, MPI_COMM_WORLD);     
         }
     }
     MPI_Finalize();
@@ -238,6 +240,7 @@ void load_board(int *board)
     char buffer[COLS * 2 + 2]; // + 2 -->"\o" +"\n"
 
     i = 0;
+    j = 0;
     fp = fopen(BOARD_FILE, mode);
     while (fgets(buffer, sizeof(buffer), fp))
     {
@@ -251,7 +254,7 @@ void load_board(int *board)
         i++;
         j = 0;
     }
-    printf("Hello, world!\n");
+    
     fclose(fp);
 }
 //[0..ROWS-1]  
