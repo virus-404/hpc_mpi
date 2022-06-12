@@ -3,7 +3,7 @@ all:
 	mpiexec -n 4 ./gameoflife;
 example: 
 	mpicc -o struct struct.c ;
-	mpiexec -n 2 ./struct;
+	mpiexec -n 3 ./struct;
 compile: 
 	mpicc -o gameoflife gameoflifev2.c ;
 clean: 
