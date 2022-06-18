@@ -8,7 +8,6 @@
 #define ROWS 10
 #define ITER 154
 #define DEBUG 1
-#define THREADS 4
 #define BOARD_FILE "./resources/10x10/LifeGameInit_10x10_iter0.txt"
 // "/share/apps/files/lifegame/Examples/5000x5000/LifeGameInit_5000x5000_iter0.txt"
 struct task {
@@ -115,10 +114,10 @@ int main(int argc, char **argv) {
     int *boardTmp = malloc((end - start + 2) * sizeof(int) * COLS);
 
     int k = 1;
-    #pragma omp parallel for num_threads(THREADS)
+    #pragma omp parallel 
     for (int i = start; i < end; i++) {
-        for (int j = 0; j < COLS; j++) {
-            #pragma omp critical
+        for (int j = 0; j < COLS; j++) { 
+            //#pragma omp critical
             boardTmp[k * COLS + j] = board[i * COLS + j];
         }
         k++;
@@ -144,25 +143,25 @@ int main(int argc, char **argv) {
         MPI_Recv(msg, 1, task_type, neighbors[1], 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         copyNeighborRow(msg, &boardTmp[(end - start + 1) * COLS]);
 
-        #pragma omp parallel for private(cellState) num_threads(THREADS)
+        #pragma omp parallel for private(cellState) 
         for (int row = 1; row < (end - start) + 1; ++row) {
             for (int col = 0; col < COLS; col++) {
                 cellState = countNeighbors(row, col, boardTmp);
-                #pragma omp critical
+                //#pragma omp critical
                 nextIter[(row - 1) * COLS + col] = evaluateCellNex(boardTmp[row * COLS + col], cellState);
             }
         }
-        #pragma omp parallel for num_threads(THREADS)
+        #pragma omp parallel for
         for (int row = 1; row < (end - start) + 1; ++row) {
             for (int col = 0; col < COLS; col++) {
-                #pragma omp critical
+                //#pragma omp critical
                 boardTmp[row * COLS + col] = nextIter[(row - 1)*COLS + col];
             }
         }
     }
     free(boardTmp);
 
-    if (iproc == 0 && DEBUG){
+    if (iproc == master && DEBUG){
         board = malloc(sizeof(int) * COLS * ROWS);
         MPI_Gatherv(nextIter, workload[iproc], MPI_INT, board, workload, shifts, MPI_INT, master, MPI_COMM_WORLD);
         elapsed = MPI_Wtime() - begin;

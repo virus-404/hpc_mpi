@@ -8,7 +8,7 @@
 #define ITER 154
 #define DEBUG 1
 #define BOARD_FILE "./resources/10x10/LifeGameInit_10x10_iter0.txt"
-// "/share/apps/files/lifegame/Examples/5000x5000/LifeGameInit_5000x5000_iter0.txt"
+// "/share/apps/files/lifegame/Examples/5000x5000/LifeGameInit_5000x5000_iter0000.txt"
 struct task {
     int row;
     int board[COLS];
@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
     MPI_Type_create_struct(2, lengths, displacements, types, &task_type);
     MPI_Type_commit(&task_type);
 
-    // https://rookiehpc.com/mpi/docs/mpi_allgatherv.php
+    // https://rookiehpc.com/mpi/docs/mpi_gatherv.php
     // Calculate the work load + displacements for each rank
     int workload[nproc];
     int shifts[nproc];
@@ -142,7 +142,6 @@ int main(int argc, char **argv) {
         copyNeighborRow(msg, &boardTmp[(end - start + 1) * COLS]);
         for (row = 1; row < (end - start) + 1; ++row) {
             for (col = 0; col < COLS; col++) {
-               
                 cellState = countNeighbors(row, col, boardTmp);
                 nextIter[(row - 1) * COLS + col] = evaluateCellNex(boardTmp[row * COLS + col], cellState);
             }
@@ -156,7 +155,7 @@ int main(int argc, char **argv) {
     }
     free(boardTmp);
 
-    if (iproc == 0) {
+    if (iproc == master) {
         board = malloc(sizeof(int) * COLS * ROWS);
         MPI_Gatherv(nextIter, workload[iproc], MPI_INT, board, workload, shifts, MPI_INT, master, MPI_COMM_WORLD);
         elapsed = MPI_Wtime() - begin;
