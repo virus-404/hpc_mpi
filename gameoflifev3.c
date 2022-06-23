@@ -3,11 +3,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xos.h>
 
 #define COLS 10
 #define ROWS 10
 #define ITER 154
-#define DEBUG 1
+#define DEBUG 0
 #define BOARD_FILE "./resources/10x10/LifeGameInit_10x10_iter0.txt"
 // "/share/apps/files/lifegame/Examples/5000x5000/LifeGameInit_5000x5000_iter0.txt"
 struct task {
@@ -29,27 +32,26 @@ enum state { dead,
              alive };
 
 int main(int argc, char **argv) {
+    int i, j , k;
     int *board;
     FILE *fp;
     loadBoard(&board);
-
+   
     if (DEBUG) {
         fp = fopen("results/10x10/LifeGameInit_10x10_iter0.txt", "w+");
-        for (int i = 0; i < ROWS; i++) {
-            for (int j = 0; j < COLS; j++) {
+        for (i = 0; i < ROWS; i++) {
+            for (j = 0; j < COLS; j++) {
                 fprintf(fp, " %d", board[i * COLS + j]);
             }
             fprintf(fp, "\n");
         }
         fclose(fp);
     }
-    omp_set_num_threads(4);
-
+   
     int nproc, iproc;
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &nproc);
     MPI_Comm_rank(MPI_COMM_WORLD, &iproc);
-
     // Create the datatype  SOURCE:
     // https://www.rookiehpc.com/mpi/docs/mpi_type_create_struct.php
     MPI_Datatype task_type;
@@ -79,7 +81,7 @@ int main(int argc, char **argv) {
     
     int rowsPerRank = ROWS/nproc;
     int shift = 0;
-    for (int i = 0; i < nproc; i++)
+    for (i = 0; i < nproc; i++)
     {
         shifts[i] = shift; 
         if(i < ROWS % nproc)
@@ -94,7 +96,7 @@ int main(int argc, char **argv) {
     int start = 0;
     int end = 0;
 
-    for (int i = 0; i < iproc; i++) {
+    for (i = 0; i < iproc; i++) {
         start += ROWS / nproc;
         if (i < ROWS % nproc) start++;
     }
@@ -113,55 +115,60 @@ int main(int argc, char **argv) {
     struct task *msg = malloc(sizeof(struct task));
     int *boardTmp = malloc((end - start + 2) * sizeof(int) * COLS);
 
-    int k = 1;
-    #pragma omp parallel 
-    for (int i = start; i < end; i++) {
-        for (int j = 0; j < COLS; j++) { 
-            //#pragma omp critical
-            boardTmp[k * COLS + j] = board[i * COLS + j];
+    
+    k = 1;
+    #pragma omp parallel shared(boardTmp, board) private (i, j, k)
+    {
+        #pragma omp for schedule(dynamic)
+        for (i = start; i < end; i++) {
+            for (j = 0; j < COLS; j++) {
+                #pragma omp critical
+                boardTmp[k * COLS + j] = board[i * COLS + j];
+            }
+            k++;
         }
-        k++;
     }
     free(board);
-
-    if (neighbors[0] == -1) neighbors[0] = nproc - 1;
-    if (neighbors[1] == nproc) neighbors[1] = 0;
     
     int *nextIter = malloc((end - start) * sizeof(int) * COLS);
-    int cellState = 0;
+    int cellState, row, col;
+
     if (iproc == 0) {
         begin = MPI_Wtime();
     }
-    for (int i = 0; i < ITER; i++) {
+ 
+    if (neighbors[0] == -1) neighbors[0] = nproc - 1;
+    if (neighbors[1] == nproc) neighbors[1] = 0;
+    for (i = 0; i < ITER; i++) {
         assembyMsg(msg, start, &boardTmp[COLS]);
         MPI_Isend(msg, 1, task_type, neighbors[0], 0, MPI_COMM_WORLD, &request[0]);
         assembyMsg(msg, end - 1, &boardTmp[(end - start) * COLS]);
         MPI_Isend(msg, 1, task_type, neighbors[1], 0, MPI_COMM_WORLD, &request[1]);
-        //printf("Process %d receives from %d and %d\n", iproc, neighbors[0], neighbors[1]);
+        // printf("Process %d receives from %d and %d\n", iproc, neighbors[0], neighbors[1]);
         MPI_Recv(msg, 1, task_type, neighbors[0], 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         copyNeighborRow(msg, &boardTmp[0]);
         MPI_Recv(msg, 1, task_type, neighbors[1], 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         copyNeighborRow(msg, &boardTmp[(end - start + 1) * COLS]);
-
-        #pragma omp parallel for private(cellState) 
-        for (int row = 1; row < (end - start) + 1; ++row) {
-            for (int col = 0; col < COLS; col++) {
-                cellState = countNeighbors(row, col, boardTmp);
-                //#pragma omp critical
-                nextIter[(row - 1) * COLS + col] = evaluateCellNex(boardTmp[row * COLS + col], cellState);
+        #pragma omp parallel shared(boardTmp, nextIter, neighbors) private (row, col, cellState)
+        {
+            #pragma omp for schedule(dynamic) 
+            for (row = 1; row < (end - start) + 1; ++row) {
+                for (col = 0; col < COLS; col++) {
+                    cellState = countNeighbors(row, col, boardTmp);
+                    nextIter[(row - 1) * COLS + col] = evaluateCellNex(boardTmp[row * COLS + col], cellState);
+                }
             }
-        }
-        #pragma omp parallel for
-        for (int row = 1; row < (end - start) + 1; ++row) {
-            for (int col = 0; col < COLS; col++) {
-                //#pragma omp critical
-                boardTmp[row * COLS + col] = nextIter[(row - 1)*COLS + col];
+            #pragma omp barrier
+            #pragma omp for schedule(dynamic) 
+            for (row = 1; row < (end - start) + 1; ++row) {
+                for (col = 0; col < COLS; col++) {
+                    boardTmp[row * COLS + col] = nextIter[(row - 1)*COLS + col];
+                }
             }
         }
     }
     free(boardTmp);
-
-    if (iproc == master && DEBUG){
+    if (iproc == master){
         board = malloc(sizeof(int) * COLS * ROWS);
         MPI_Gatherv(nextIter, workload[iproc], MPI_INT, board, workload, shifts, MPI_INT, master, MPI_COMM_WORLD);
         elapsed = MPI_Wtime() - begin;
@@ -170,8 +177,8 @@ int main(int argc, char **argv) {
             char path[255];
             sprintf(path, "results/10x10/LifeGameEnd_10x10_iter%d.txt", ITER-1);
             fp = fopen(path, "w+");  
-            for (int i = 0; i < ROWS; i++) {
-                for (int j = 0; j < COLS; j++) {
+            for (i = 0; i < ROWS; i++) {
+                for (j = 0; j < COLS; j++) {
                     fprintf(fp, " %d", board [i * COLS + j]);
                 }
                 fprintf(fp, "\n");
@@ -183,7 +190,7 @@ int main(int argc, char **argv) {
     }
     MPI_Finalize();
     return 0;
-}
+    }
 void loadBoard(int **board) {
     int i, j;
     FILE *fp;
