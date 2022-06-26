@@ -8,8 +8,9 @@
 #define ROWS 10
 #define ITER 154
 #define DEBUG 0
-#define BOARD_FILE "./resources/10x10/LifeGameInit_10x10_iter0.txt"
-// "/share/apps/files/lifegame/Examples/5000x5000/LifeGameInit_5000x5000_iter0.txt"
+#define BOARD_FILE "/share/apps/files/lifegame/Examples/5000x5000/LifeGameInit_5000x5000_iter0.txt"
+    //"./resources/10x10/LifeGameInit_10x10_iter0.txt"
+// 
 struct task {
     int row;
     int board[COLS];
@@ -211,39 +212,41 @@ void loadBoard(int **board) {
 
 void assembyMsg(struct task * assembly, int row, int *board) {
     assembly->row = row;
-    for (int i = 0; i < COLS; i++) {
+    int i; 
+    for (i = 0; i < COLS; i++) {
         assembly->board[i] = board[i];
     }
 }
 
 void copyNeighborRow(struct task * msg, int *board) {
-    for (int i = 0; i < COLS; i++) {
+    int i;
+    for (i = 0; i < COLS; i++) {
         board[i] = msg->board[i];
     }
 }
 int countNeighbors(int row, int col, int *board){
     int neighbors = 0;
     
-     neighbors += board[(row - 1)* COLS + col];                // N
-     neighbors += board[(row + 1)* COLS + col];                // S
-     if (col == COLS - 1) {
-         neighbors += board[(row - 1) * COLS];                 // NE
-         neighbors += board[(row)*COLS];                       // E
-         neighbors += board[(row + 1) * COLS];                 // SE
-     } else {
-         neighbors += board[(row - 1) * COLS + col + 1];       // NE
-         neighbors += board[(row)*COLS + col + 1];             // E
-         neighbors += board[(row + 1) * COLS + col + 1];       // SE
-     }
-     if (col == 0) {
-         neighbors += board[(row - 1) * COLS + COLS - 1];      // NW
-         neighbors += board[(row) * COLS + COLS - 1];          // W
-         neighbors += board[(row + 1) * COLS + COLS - 1];      // SW
-     } else {
-         neighbors += board[(row - 1) * COLS + col - 1];       // NW
-         neighbors += board[(row) * COLS + col - 1];           // W
-         neighbors += board[(row + 1) * COLS + col - 1];       // SW
-     }
+    neighbors += board[(row - 1)* COLS + col];                // N
+    neighbors += board[(row + 1)* COLS + col];                // S
+    if (col == COLS - 1) {
+        neighbors += board[(row - 1) * COLS];                 // NE
+        neighbors += board[(row)*COLS];                       // E
+        neighbors += board[(row + 1) * COLS];                 // SE
+    } else {
+        neighbors += board[(row - 1) * COLS + col + 1];       // NE
+        neighbors += board[(row)*COLS + col + 1];             // E
+        neighbors += board[(row + 1) * COLS + col + 1];       // SE
+    }
+    if (col == 0) {
+        neighbors += board[(row - 1) * COLS + COLS - 1];      // NW
+        neighbors += board[(row) * COLS + COLS - 1];          // W
+        neighbors += board[(row + 1) * COLS + COLS - 1];      // SW
+    } else {
+        neighbors += board[(row - 1) * COLS + col - 1];       // NW
+        neighbors += board[(row) * COLS + col - 1];           // W
+        neighbors += board[(row + 1) * COLS + col - 1];       // SW
+    }
 
     return neighbors;
 }
